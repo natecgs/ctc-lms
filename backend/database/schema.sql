@@ -35,6 +35,27 @@ CREATE INDEX idx_email_verification_tokens_user_id ON email_verification_tokens(
 CREATE INDEX idx_email_verification_tokens_token ON email_verification_tokens(token);
 CREATE INDEX idx_email_verification_tokens_expires_at ON email_verification_tokens(expires_at);
 
+-- ============================================================================
+-- CURRENCIES
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS currencies (
+  id SERIAL PRIMARY KEY,
+  code VARCHAR(3) UNIQUE NOT NULL,  -- e.g., 'MWK', 'ZAR', 'ZWL'
+  name VARCHAR(100) NOT NULL,  -- e.g., 'Malawian Kwacha'
+  symbol VARCHAR(10) NOT NULL,  -- e.g., 'MK', 'R', 'Z$'
+  country VARCHAR(100),  -- e.g., 'Malawi'
+  is_active BOOLEAN DEFAULT TRUE,
+  exchange_rate DECIMAL(15, 6) DEFAULT 1.0,  -- For future currency conversion
+  is_default BOOLEAN DEFAULT FALSE,  -- Mark which is the default currency
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_currencies_code ON currencies(code);
+CREATE INDEX IF NOT EXISTS idx_currencies_is_active ON currencies(is_active);
+CREATE INDEX IF NOT EXISTS idx_currencies_is_default ON currencies(is_default);
+
 CREATE TABLE IF NOT EXISTS profiles (
   id SERIAL PRIMARY KEY,
   user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -44,6 +65,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   organization VARCHAR(255),
   bio TEXT,
   avatar_url TEXT,  -- Can store base64 encoded images or URLs
+  preferred_currency VARCHAR(3) DEFAULT 'MWK',  -- User's preferred currency
   total_hours_learned DECIMAL(10, 2) DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -90,6 +112,7 @@ CREATE TABLE IF NOT EXISTS courses (
   objectives TEXT[] DEFAULT '{}',  -- Array of learning objectives
   requirements TEXT[] DEFAULT '{}',  -- Array of course requirements
   is_published BOOLEAN DEFAULT FALSE,
+  is_featured BOOLEAN DEFAULT FALSE,  -- Mark course as featured on homepage
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT valid_level CHECK (level IN ('Beginner', 'Intermediate', 'Advanced'))
@@ -98,7 +121,8 @@ CREATE TABLE IF NOT EXISTS courses (
 CREATE INDEX idx_courses_instructor_id ON courses(instructor_id);
 CREATE INDEX idx_courses_category ON courses(category);
 CREATE INDEX idx_courses_code ON courses(code);
-CREATE INDEX idx_courses_currency ON courses(currency);
+CREATE INDEX idx_courses_currency ON courses(cu
+CREATE INDEX idx_courses_featured ON courses(is_featured) WHERE is_featured = TRUE;rrency);
 CREATE INDEX idx_courses_uuid ON courses(uuid);
 
 -- ============================================================================
@@ -291,3 +315,28 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at DESC);
+
+-- ============================================================================
+-- CURRENCY FOREIGN KEY FOR PROFILES
+-- ============================================================================
+
+ALTER TABLE profiles ADD CONSTRAINT fk_preferred_currency
+  FOREIGN KEY (preferred_currency) REFERENCES currencies(code) ON DELETE SET DEFAULT;
+
+CREATE INDEX IF NOT EXISTS idx_profiles_preferred_currency ON profiles(preferred_currency);
+
+-- ============================================================================
+-- DEFAULT CURRENCIES
+-- ============================================================================
+
+INSERT INTO currencies (code, name, symbol, country, is_active, is_default)
+VALUES
+  ('MWK', 'Malawian Kwacha', 'MK', 'Malawi', TRUE, TRUE),
+  ('ZAR', 'South African Rand', 'R', 'South Africa', TRUE, FALSE),
+  ('ZWL', 'Zimbabwe Dollar', 'Z$', 'Zimbabwe', TRUE, FALSE),
+  ('TZS', 'Tanzania Shilling', 'TSh', 'Tanzania', TRUE, FALSE),
+  ('ZMW', 'Zambian Kwacha', 'ZK', 'Zambia', TRUE, FALSE),
+  ('USD', 'US Dollar', '$', 'United States', TRUE, FALSE),
+  ('EUR', 'Euro', '€', 'European Union', TRUE, FALSE),
+  ('GBP', 'British Pound', '£', 'United Kingdom', TRUE, FALSE)
+ON CONFLICT (code) DO NOTHING;
