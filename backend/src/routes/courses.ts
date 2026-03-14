@@ -273,6 +273,43 @@ router.post('/:courseId/modules/:moduleId/lessons', async (req: Request, res: Re
   }
 });
 
+// Delete a module (and all its lessons due to cascade delete)
+router.delete('/:courseId/modules/:moduleId', async (req: Request, res: Response) => {
+  try {
+    const courseId = parseInt(req.params.courseId);
+    const moduleId = parseInt(req.params.moduleId);
+
+    const module = await ModuleModel.findById(moduleId);
+    if (!module) {
+      return res.status(404).json({
+        success: false,
+        error: 'Module not found',
+      });
+    }
+
+    if (module.course_id !== courseId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Module does not belong to this course',
+      });
+    }
+
+    await ModuleModel.delete(moduleId);
+
+    const response: ApiResponse<any> = {
+      success: true,
+      data: { id: moduleId, message: 'Module deleted successfully' },
+    };
+    res.json(response);
+  } catch (error) {
+    console.error('Error deleting module:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete module',
+    });
+  }
+});
+
 // ============================================================================
 // LESSON ENDPOINTS
 // ============================================================================
@@ -281,7 +318,7 @@ router.post('/:courseId/modules/:moduleId/lessons', async (req: Request, res: Re
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const courseId = parseInt(req.params.id);
-    const { title, subtitle, description, category, level, price, image_url } = req.body;
+    const { title, subtitle, description, category, level, price, code, image_url, tags, objectives, requirements, is_published } = req.body;
 
     if (!title) {
       return res.status(400).json({
@@ -306,7 +343,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (category !== undefined) updateData.category = category;
     if (level !== undefined) updateData.level = level;
     if (price !== undefined) updateData.price = price;
+    if (code !== undefined) updateData.code = code;
     if (image_url !== undefined) updateData.image_url = image_url;
+    if (tags !== undefined) updateData.tags = tags;
+    if (objectives !== undefined) updateData.objectives = objectives;
+    if (requirements !== undefined) updateData.requirements = requirements;
+    if (is_published !== undefined) updateData.is_published = is_published;
 
     const updatedCourse = await CourseModel.update(courseId, updateData);
 

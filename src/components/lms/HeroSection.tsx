@@ -22,14 +22,8 @@ const HeroSection: React.FC = () => {
     fetchFeaturedCourse();
   }, []);
 
-  const stats = [
-    { icon: BookOpen, value: '50+', label: 'Expert Courses' },
-    { icon: Users, value: '15,000+', label: 'Active Learners' },
-    { icon: Award, value: '8,500+', label: 'Certificates Issued' },
-  ];
-
   const features = [
-    'State-approved CEU credits',
+    'Acredited childcare training',
     'Self-paced online learning',
     'Expert-led video courses',
     'Instant certificate generation',
@@ -61,7 +55,7 @@ const HeroSection: React.FC = () => {
 
             <p className="text-lg text-teal-100 mb-8 max-w-xl leading-relaxed">
               Professional development courses designed specifically for childcare providers. 
-              Earn CEU credits, gain new skills, and make a greater impact on the children in your care.
+              Gain new skills, and make a greater impact on the children in your care.
             </p>
 
             <div className="grid grid-cols-2 gap-3 mb-8">
@@ -142,16 +136,45 @@ const HeroSection: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats Bar */}
+        {/* Why Choose Us Section */}
         <div className="mt-16 pt-8 border-t border-teal-700/50">
-          <div className="grid grid-cols-3 gap-8">
-            {stats.map((stat, i) => (
-              <div key={i} className="text-center">
-                <div className="inline-flex items-center justify-center w-12 h-12 bg-teal-700/50 rounded-xl mb-3">
-                  <stat.icon className="w-6 h-6 text-emerald-300" />
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-white mb-3">Why Learners Choose Us</h2>
+            <p className="text-teal-200 max-w-2xl mx-auto">Join thousands of childcare professionals who've advanced their careers with our industry-leading courses and certifications.</p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              {
+                icon: BookOpen,
+                title: 'Expert Content',
+                description: 'Courses developed by childcare industry professionals'
+              },
+              {
+                icon: Award,
+                title: 'Recognized Certifications',
+                description: 'Credentials valued by employers nationwide'
+              },
+              {
+                icon: Users,
+                title: 'Active Community',
+                description: 'Connect and learn with thousands of peers'
+              },
+              {
+                icon: CheckCircle,
+                title: 'Self-Paced Learning',
+                description: 'Study when it works for your schedule'
+              }
+            ].map((item, i) => (
+              <div key={i} className="group relative">
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur" />
+                <div className="relative bg-teal-900/40 backdrop-blur-sm rounded-2xl border border-teal-500/20 p-6 hover:border-teal-500/50 transition-all">
+                  <div className="w-12 h-12 bg-gradient-to-br from-emerald-500/30 to-teal-500/30 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <item.icon className="w-6 h-6 text-emerald-300" />
+                  </div>
+                  <h3 className="font-semibold text-white mb-2">{item.title}</h3>
+                  <p className="text-teal-200 text-sm leading-relaxed">{item.description}</p>
                 </div>
-                <p className="text-2xl sm:text-3xl font-bold text-white">{stat.value}</p>
-                <p className="text-teal-200 text-sm">{stat.label}</p>
               </div>
             ))}
           </div>

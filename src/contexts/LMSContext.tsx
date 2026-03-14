@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { usersApi, coursesApi } from '@/lib/api';
+import { usersApi, coursesApi, currenciesApi } from '@/lib/api';
 import {
   Course, Quiz, EnrolledCourse, StudentProfile,
   quizzes as allQuizzes, defaultStudentProfile
@@ -10,6 +10,7 @@ import {
   getCompletedLessons, getEnrollments, getBestQuizScores, getCertificates,
   DBProfile, DBEnrollment, DBCompletedLesson, DBCertificate,
 } from '@/lib/database';
+import { DEFAULT_CURRENCY, getCurrencySymbol } from '@/lib/currencies';
 
 // Simple user interface for API-based authentication
 interface SimpleUser {
@@ -47,6 +48,10 @@ interface LMSState {
   courses: Course[];
   quizzes: Quiz[];
   coursesLoading: boolean;
+  selectedCurrency: string;
+  showEmailVerification: boolean;
+  pendingVerificationUserId: number | null;
+  pendingVerificationEmail: string | null;
 }
 
 interface LMSContextType extends LMSState {
@@ -56,6 +61,7 @@ interface LMSContextType extends LMSState {
   submitQuizScore: (quizId: string, score: number, answers?: Record<string, string>) => void;
   setSearchQuery: (query: string) => void;
   setSelectedCategory: (category: string) => void;
+  setCurrency: (currency: string) => void;
   getCourse: (id: string) => Course | undefined;
   getQuiz: (id: string) => Quiz | undefined;
   getEnrolledCourse: (courseId: string) => EnrolledCourse | undefined;
@@ -69,6 +75,8 @@ interface LMSContextType extends LMSState {
   filteredCourses: Course[];
   refreshUserData: () => Promise<void>;
   refreshCourses: () => Promise<void>;
+  closeEmailVerification: () => void;
+  completeEmailVerification: () => void;
 }
 
 const LMSContext = createContext<LMSContextType | null>(null);
@@ -120,6 +128,14 @@ const emptyProfile: StudentProfile = {
 };
 
 export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Initialize currency from localStorage or use default
+  const getInitialCurrency = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ctc_lms_currency') || DEFAULT_CURRENCY;
+    }
+    return DEFAULT_CURRENCY;
+  };
+
   const [state, setState] = useState<LMSState>({
     currentView: 'home',
     selectedCourseId: null,
@@ -138,6 +154,10 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     courses: [],
     quizzes: allQuizzes,
     coursesLoading: true,
+    selectedCurrency: getInitialCurrency(),
+    showEmailVerification: false,
+    pendingVerificationUserId: null,
+    pendingVerificationEmail: null,
   });
 
   const loadingRef = useRef(false);
@@ -268,6 +288,10 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const userRole = profile?.role || user.role || 'student';
       console.log('[LMS] Login: Determined user role:', userRole);
       
+      // Load user's preferred currency from profile
+      const userCurrency = profile?.preferred_currency || DEFAULT_CURRENCY;
+      localStorage.setItem('ctc_lms_currency', userCurrency);
+      
       // Store user ID and role in localStorage
       localStorage.setItem('ctc_lms_user_id', String(user.id));
       localStorage.setItem('ctc_lms_user_email', email);
@@ -284,6 +308,7 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showAuthModal: false,
         authError: null,
         currentView: dashboardView,
+        selectedCurrency: userCurrency,
       }));
       
       // Load user data
@@ -328,22 +353,18 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('ctc_lms_user_email', email);
       localStorage.setItem('ctc_lms_user_role', userRole);
 
-      const dashboardView: ViewType = userRole === 'instructor' ? 'instructor' : 'dashboard';
-
+      // Show email verification modal instead of logging in immediately
       setState(prev => ({
         ...prev,
-        user: { id: user.id, email, role: userRole },
-        isLoggedIn: true,
         authLoading: false,
         showAuthModal: false,
         authError: null,
-        currentView: dashboardView,
+        showEmailVerification: true,
+        pendingVerificationUserId: user.id,
+        pendingVerificationEmail: email,
       }));
 
-      // Load user data
-      refreshUserData(user.id);
-      
-      console.log('[LMS] Signup successful for user:', user.id);
+      console.log('[LMS] Signup successful, showing email verification for user:', user.id);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('[LMS] Signup failed:', errorMessage);
@@ -353,7 +374,7 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         authError: errorMessage || 'Signup failed',
       }));
     }
-  }, [refreshUserData]);
+  }, []);
 
   const logout = useCallback(async () => {
     localStorage.removeItem('ctc_lms_user_id');
@@ -475,6 +496,18 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setState(prev => ({ ...prev, selectedCategory: category }));
   }, []);
 
+  const setCurrency = useCallback((currency: string) => {
+    setState(prev => ({ ...prev, selectedCurrency: currency }));
+    localStorage.setItem('ctc_lms_currency', currency);
+    
+    // Persist to database if user is logged in
+    if (state.user?.id) {
+      usersApi.updateCurrencyPreference(state.user.id, currency).catch(err => {
+        console.error('[LMS] Error saving currency preference:', err);
+      });
+    }
+  }, [state.user?.id]);
+
   const getCourse = useCallback((id: string) => state.courses.find(c => String(c.id) === id), [state.courses]);
   const getQuiz = useCallback((id: string) => state.quizzes.find(q => q.id === id), [state.quizzes]);
 
@@ -494,6 +527,40 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setState(prev => ({ ...prev, authMode: mode, authError: null }));
   }, []);
 
+  // ─── Email Verification ────────────────────────────────────────────────────
+  const closeEmailVerification = useCallback(() => {
+    setState(prev => ({
+      ...prev,
+      showEmailVerification: false,
+      pendingVerificationUserId: null,
+      pendingVerificationEmail: null,
+    }));
+  }, []);
+
+  const completeEmailVerification = useCallback(() => {
+    const userId = state.pendingVerificationUserId;
+    const email = state.pendingVerificationEmail;
+
+    if (!userId || !email) return;
+
+    // Complete the login process
+    const userRole = localStorage.getItem('ctc_lms_user_role') || 'student';
+    const dashboardView: ViewType = userRole === 'instructor' ? 'instructor' : 'dashboard';
+
+    setState(prev => ({
+      ...prev,
+      user: { id: userId, email, role: userRole as 'student' | 'instructor' | 'admin' },
+      isLoggedIn: true,
+      currentView: dashboardView,
+      showEmailVerification: false,
+      pendingVerificationUserId: null,
+      pendingVerificationEmail: null,
+    }));
+
+    // Load user data
+    refreshUserData(userId);
+  }, [state.pendingVerificationUserId, state.pendingVerificationEmail, refreshUserData]);
+
   const filteredCourses = state.courses.filter(course => {
     const matchesSearch = state.searchQuery === '' ||
       course.title.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
@@ -512,6 +579,7 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       submitQuizScore,
       setSearchQuery,
       setSelectedCategory,
+      setCurrency,
       getCourse,
       getQuiz,
       getEnrolledCourse,
@@ -525,6 +593,8 @@ export const LMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       filteredCourses,
       refreshUserData: () => refreshUserData(),
       refreshCourses,
+      closeEmailVerification,
+      completeEmailVerification,
     }}>
       {children}
     </LMSContext.Provider>

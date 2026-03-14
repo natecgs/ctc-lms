@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { UserModel, ProfileModel, InstructorModel } from '../models/UserModel.js';
+import { EmailService } from '../services/emailService.js';
 import { ApiResponse } from '../types.js';
 
 const router = Router();
@@ -367,6 +368,139 @@ router.get('/:userId/stats', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch instructor stats',
+    });
+  }
+});
+
+// ============================================================================
+// EMAIL VERIFICATION ENDPOINTS
+// ============================================================================
+
+// Send verification email
+router.post('/send-verification-email', async (req: Request, res: Response) => {
+  try {
+    const { userId, email } = req.body;
+
+    if (!userId || !email) {
+      return res.status(400).json({
+        success: false,
+        error: 'userId and email are required',
+      });
+    }
+
+    // Check if user exists
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // Check if email already verified
+    if (user.email_verified) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email is already verified',
+      });
+    }
+
+    // Create verification token
+    const token = await UserModel.createVerificationToken(userId);
+
+    // Get user profile for name
+    const profile = await ProfileModel.findByUserId(userId);
+    const userName = profile?.full_name || email.split('@')[0];
+
+    // Send verification email
+    const emailSent = await EmailService.sendVerificationEmail(email, token, userName);
+
+    if (!emailSent) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to send verification email',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Verification email sent successfully',
+    });
+  } catch (error) {
+    console.error('[USER ROUTE] Error sending verification email:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to send verification email',
+    });
+  }
+});
+
+// Verify email token
+router.post('/verify-email-token', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token is required',
+      });
+    }
+
+    // Verify the token
+    const user = await UserModel.verifyToken(token);
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired verification token',
+      });
+    }
+
+    // Send welcome email
+    const profile = await ProfileModel.findByUserId(user.id);
+    const userName = profile?.full_name || user.email.split('@')[0];
+    await EmailService.sendWelcomeEmail(user.email, userName);
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully',
+      data: user,
+    });
+  } catch (error) {
+    console.error('[USER ROUTE] Error verifying email token:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to verify email',
+    });
+  }
+});
+
+// Check email verification status
+router.get('/:userId/verification-status', async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const user = await UserModel.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        email_verified: user.email_verified,
+        email_verified_at: user.email_verified_at,
+      },
+    });
+  } catch (error) {
+    console.error('[USER ROUTE] Error checking verification status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check verification status',
     });
   }
 });

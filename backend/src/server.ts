@@ -12,6 +12,7 @@ import courseRoutes from './routes/courses.js';
 import enrollmentRoutes from './routes/enrollments.js';
 import userRoutes from './routes/users.js';
 import quizRoutes from './routes/quizzes.js';
+import currencyRoutes from './routes/currencies.js';
 
 const app: Express = express();
 const PORT = parseInt(process.env.PORT || '5000', 10);
@@ -101,6 +102,9 @@ console.log('[ROUTES] Registered /api/quizzes');
 
 app.use('/api/users', userRoutes);
 console.log('[ROUTES] Registered /api/users');
+
+app.use('/api/currencies', currencyRoutes);
+console.log('[ROUTES] Registered /api/currencies');
 
 // ============================================================================
 // ERROR HANDLING

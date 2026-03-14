@@ -38,6 +38,7 @@ export interface Module {
 export interface Course {
   id: string;
   title: string;
+  code?: string;
   subtitle: string;
   description: string;
   category: string;

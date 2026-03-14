@@ -120,8 +120,8 @@ export class CourseModel {
     const result = await query(
       `INSERT INTO courses (
         uuid, instructor_id, title, subtitle, description, category, level,
-        duration, price, currency, image_url, tags, objectives, requirements, is_published
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        duration, price, currency, image_url, code, tags, objectives, requirements, is_published
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
       [
         uuid,
@@ -135,6 +135,7 @@ export class CourseModel {
         data.price,
         data.currency || 'MWK',
         data.image_url,
+        data.code || null,
         data.tags || [],
         data.objectives || [],
         data.requirements || [],
@@ -157,6 +158,7 @@ export class CourseModel {
       'level',
       'duration',
       'price',
+      'code',
       'image_url',
       'tags',
       'objectives',

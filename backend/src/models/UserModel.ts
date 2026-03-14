@@ -44,16 +44,61 @@ export class UserModel {
 
   static async update(
     id: number,
-    data: Partial<{ role: string; is_active: boolean }>
+    data: Partial<{ role: string; is_active: boolean; email_verified: boolean }>
   ): Promise<User> {
     const result = await query(
       `UPDATE users SET role = COALESCE($1, role),
                         is_active = COALESCE($2, is_active),
+                        email_verified = COALESCE($3, email_verified),
+                        email_verified_at = CASE WHEN $3 = TRUE THEN CURRENT_TIMESTAMP ELSE email_verified_at END,
                         updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3 RETURNING *`,
-      [data.role, data.is_active, id]
+       WHERE id = $4 RETURNING *`,
+      [data.role, data.is_active, data.email_verified, id]
     );
     return result.rows[0];
+  }
+
+  static async createVerificationToken(userId: number, expiresIn: number = 24): Promise<string> {
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + expiresIn * 60 * 60 * 1000);
+    await query(
+      `INSERT INTO email_verification_tokens (user_id, token, expires_at)
+       VALUES ($1, $2, $3)`,
+      [userId, token, expiresAt]
+    );
+    return token;
+  }
+
+  static async findVerificationToken(token: string): Promise<any | null> {
+    const result = await query(
+      `SELECT * FROM email_verification_tokens 
+       WHERE token = $1 AND expires_at > CURRENT_TIMESTAMP`,
+      [token]
+    );
+    return result.rows[0] || null;
+  }
+
+  static async deleteVerificationToken(token: string): Promise<void> {
+    await query(`DELETE FROM email_verification_tokens WHERE token = $1`, [token]);
+  }
+
+  static async verifyToken(token: string): Promise<User | null> {
+    const tokenRow = await this.findVerificationToken(token);
+    if (!tokenRow) return null;
+
+    // Mark email as verified
+    const result = await query(
+      `UPDATE users SET email_verified = TRUE, 
+                        email_verified_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 RETURNING *`,
+      [tokenRow.user_id]
+    );
+
+    // Delete the token
+    await this.deleteVerificationToken(token);
+
+    return result.rows[0] || null;
   }
 }
 

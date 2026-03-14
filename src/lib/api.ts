@@ -86,6 +86,7 @@ function transformCourse(backendCourse: any) {
     category: backendCourse.category || '',
     level: backendCourse.level || 'Beginner',
     duration: backendCourse.duration || '',
+    code: backendCourse.code || '',
     lessons: backendCourse.modules?.reduce((sum: number, m: any) => sum + (m.lessons?.length || 0), 0) || 0,
     modules: backendCourse.modules || [],
     instructor: instructorData?.title || 'Course Instructor',
@@ -223,6 +224,19 @@ export const coursesApi = {
   },
 
   /**
+   * Delete a module and all its lessons
+   */
+  async deleteModule(courseId: number, moduleId: number) {
+    const response = await apiCall<{ success: boolean; data: any }>(
+      `/courses/${courseId}/modules/${moduleId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    return response.data;
+  },
+
+  /**
    * Update a course
    */
   async update(courseId: number, courseData: any) {
@@ -289,6 +303,41 @@ export const quizzesApi = {
    */
   async getByUuid(uuid: string) {
     const response = await apiCall<{ success: boolean; data: any }>(`/quizzes/uuid/${uuid}`);
+    return response.data;
+  },
+
+  /**
+   * Create a new quiz
+   */
+  async create(courseId: number, quizData: any) {
+    const response = await apiCall<{ success: boolean; data: any }>('/quizzes', {
+      method: 'POST',
+      body: JSON.stringify({
+        courseId,
+        ...quizData,
+      }),
+    });
+    return response.data;
+  },
+
+  /**
+   * Update an existing quiz
+   */
+  async update(quizId: number, quizData: any) {
+    const response = await apiCall<{ success: boolean; data: any }>(`/quizzes/${quizId}`, {
+      method: 'PUT',
+      body: JSON.stringify(quizData),
+    });
+    return response.data;
+  },
+
+  /**
+   * Delete a quiz
+   */
+  async delete(quizId: number) {
+    const response = await apiCall<{ success: boolean; data: any }>(`/quizzes/${quizId}`, {
+      method: 'DELETE',
+    });
     return response.data;
   },
 };
@@ -487,6 +536,73 @@ export const usersApi = {
    */
   async getInstructorStats(userId: number) {
     const response = await apiCall<{ success: boolean; data: any }>(`/users/${userId}/stats`);
+    return response.data;
+  },
+
+  /**
+   * Update user's preferred currency
+   */
+  async updateCurrencyPreference(userId: number, currencyCode: string) {
+    const response = await apiCall<{ success: boolean; data: any }>(`/users/${userId}/profile`, {
+      method: 'PUT',
+      body: JSON.stringify({ preferred_currency: currencyCode }),
+    });
+    return response.data;
+  },
+};
+
+// ============================================================================
+// CURRENCIES API
+// ============================================================================
+
+export const currenciesApi = {
+  /**
+   * Get all active currencies
+   */
+  async getAll() {
+    const response = await apiCall<{ success: boolean; data: any; count: number }>('/currencies', {
+      params: { active_only: 'true' },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get currency by code
+   */
+  async getByCode(code: string) {
+    const response = await apiCall<{ success: boolean; data: any }>(`/currencies/${code}`);
+    return response.data;
+  },
+
+  /**
+   * Create new currency (Admin only)
+   */
+  async create(currencyData: { code: string; name: string; symbol: string; country?: string; exchange_rate?: number }) {
+    const response = await apiCall<{ success: boolean; data: any }>('/currencies', {
+      method: 'POST',
+      body: JSON.stringify(currencyData),
+    });
+    return response.data;
+  },
+
+  /**
+   * Update currency (Admin only)
+   */
+  async update(code: string, updates: Record<string, any>) {
+    const response = await apiCall<{ success: boolean; data: any }>(`/currencies/${code}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    return response.data;
+  },
+
+  /**
+   * Deactivate currency (Admin only, soft delete)
+   */
+  async delete(code: string) {
+    const response = await apiCall<{ success: boolean; data: any }>(`/currencies/${code}`, {
+      method: 'DELETE',
+    });
     return response.data;
   },
 };

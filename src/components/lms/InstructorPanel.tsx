@@ -1,22 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { useLMS } from '@/contexts/LMSContext';
-import { coursesApi } from '@/lib/api';
+import { coursesApi, currenciesApi, quizzesApi } from '@/lib/api';
 import { usersApi } from '@/lib/api';
+import { getCurrencySymbol } from '@/lib/currencies';
 import {
   Plus, BookOpen, Users, Award, TrendingUp, BarChart3,
   FileText, Settings, Eye, Edit, Trash2, ChevronRight,
-  PlusCircle, Save, X, GripVertical, CheckCircle
+  PlusCircle, Save, X, GripVertical, CheckCircle, DollarSign
 } from 'lucide-react';
 
-type InstructorTab = 'overview' | 'courses' | 'create-course' | 'create-quiz' | 'students' | 'instructors';
+interface Currency {
+  id: number;
+  code: string;
+  name: string;
+  symbol: string;
+  country?: string;
+  is_active: boolean;
+}
+
+type InstructorTab = 'overview' | 'courses' | 'create-course' | 'create-quiz' | 'edit-quizzes' | 'students' | 'instructors';
 
 interface NewCourse {
   title: string;
   subtitle: string;
   description: string;
+  objectives: string[];
+  requirements: string[];
   category: string;
   level: string;
   price: string;
+  code: string;
   image: string;
   instructorId: string;
   modules: { title: string; lessons: { title: string; type: string; duration: string }[] }[];
@@ -40,15 +53,15 @@ interface InstructorOption {
 }
 
 const InstructorPanel: React.FC = () => {
-  const { navigate, courses, user, refreshCourses } = useLMS();
+  const { navigate, courses, user, refreshCourses, selectedCurrency, setCurrency } = useLMS();
   const [activeTab, setActiveTab] = useState<InstructorTab>('overview');
   const [instructors, setInstructors] = useState<InstructorOption[]>([]);
   const [newCourse, setNewCourse] = useState<NewCourse>({
-    title: '', subtitle: '', description: '', category: 'Infant Care', level: 'Beginner', price: '',
+    title: '', subtitle: '', description: '', objectives: [], requirements: [], category: 'Infant Care', level: 'Beginner', price: '', code: '',
     image: 'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=600&h=400&fit=crop',
     instructorId: user?.id?.toString() || '',
     modules: [{ title: '', lessons: [{ title: '', type: 'video', duration: '' }] }],
-  });
+  })
   const [newQuiz, setNewQuiz] = useState<NewQuiz>({
     title: '', courseId: '', timeLimit: '15', passingScore: '70',
     questions: [{ question: '', type: 'multiple-choice', options: ['', '', '', ''], correctAnswer: '', explanation: '' }],
@@ -75,6 +88,17 @@ const InstructorPanel: React.FC = () => {
     avg_rating: '0',
     total_revenue: 0,
   });
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [courseQuizzes, setCourseQuizzes] = useState<any[]>([]);
+  const [selectedCourseForQuizzes, setSelectedCourseForQuizzes] = useState<string | null>(null);
+  const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
+  const [creatingNewQuizInEditView, setCreatingNewQuizInEditView] = useState(false);
+  const [quizDeleteConfirm, setQuizDeleteConfirm] = useState<string | null>(null);
+  const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
+
+  // Get currency symbol
+  const currencySymbol = getCurrencySymbol(selectedCurrency);
 
   // Fetch instructors on mount
   useEffect(() => {
@@ -119,12 +143,26 @@ const InstructorPanel: React.FC = () => {
     fetchStats();
   }, [user?.id]);
 
+  // Fetch currencies from database
+  useEffect(() => {
+    const fetchCurrencies = async () => {
+      try {
+        const currenciesData = await currenciesApi.getAll();
+        setCurrencies(currenciesData || []);
+      } catch (error) {
+        console.error('Error fetching currencies:', error);
+        // Fallback: use empty array, will show nothing in dropdown
+      }
+    };
+    fetchCurrencies();
+  }, []);
+
   // Build stats display array
   const statsDisplay = [
     { icon: BookOpen, label: 'Total Courses', value: String(instructorStats.total_courses), color: 'bg-blue-100 text-blue-600' },
     { icon: Users, label: 'Total Students', value: (instructorStats.total_students || 0).toLocaleString(), color: 'bg-emerald-100 text-emerald-600' },
     { icon: Award, label: 'Avg. Rating', value: `${instructorStats.avg_rating}★`, color: 'bg-amber-100 text-amber-600' },
-    { icon: TrendingUp, label: 'Total Revenue', value: `R${((instructorStats.total_revenue || 0) / 1000).toFixed(1)}k`, color: 'bg-purple-100 text-purple-600' },
+    { icon: TrendingUp, label: 'Total Revenue', value: `${currencySymbol}${((instructorStats.total_revenue || 0) / 1000).toFixed(1)}k`, color: 'bg-purple-100 text-purple-600' },
   ];
 
   const handleSaveCourse = async () => {
@@ -170,9 +208,12 @@ const InstructorPanel: React.FC = () => {
         title: newCourse.title,
         subtitle: newCourse.subtitle,
         description: newCourse.description,
+        objectives: newCourse.objectives.filter(o => o.trim()),
+        requirements: newCourse.requirements.filter(r => r.trim()),
         category: newCourse.category,
         level: newCourse.level,
         price: parseFloat(newCourse.price) || 0,
+        code: newCourse.code.trim() || '',
         image_url: newCourse.image || 'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=600&h=400&fit=crop',
       };
 
@@ -215,7 +256,7 @@ const InstructorPanel: React.FC = () => {
       setShowSaveSuccess(true);
       // Reset form
       setNewCourse({
-        title: '', subtitle: '', description: '', category: 'Infant Care', level: 'Beginner', price: '',
+        title: '', subtitle: '', description: '', objectives: [], requirements: [], category: 'Infant Care', level: 'Beginner', price: '', code: '',
         image: 'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=600&h=400&fit=crop',
         instructorId: user?.id?.toString() || '',
         modules: [{ title: '', lessons: [{ title: '', type: 'video', duration: '' }] }],
@@ -231,35 +272,123 @@ const InstructorPanel: React.FC = () => {
     }
   };
 
-  const handleSaveQuiz = () => {
-    setShowSaveSuccess(true);
-    setTimeout(() => { setShowSaveSuccess(false); setActiveTab('courses'); }, 2000);
+  const handleSaveQuiz = async () => {
+    try {
+      setSaveError(null);
+
+      if (!newQuiz.title.trim()) {
+        setSaveError('Quiz title is required');
+        return;
+      }
+
+      if (!newQuiz.courseId) {
+        setSaveError('Course is required');
+        return;
+      }
+
+      if (newQuiz.questions.length === 0) {
+        setSaveError('At least one question is required');
+        return;
+      }
+
+      const quizData = {
+        title: newQuiz.title,
+        description: '',
+        passingScore: parseInt(newQuiz.passingScore) || 70,
+        timeLimit: parseInt(newQuiz.timeLimit) || null,
+        isExam: false,
+        questions: newQuiz.questions.map(q => ({
+          question: q.question,
+          type: q.type,
+          options: q.type === 'multiple-choice' ? q.options.filter(o => o.trim()) : [],
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+        })),
+      };
+
+      if (editingQuizId) {
+        // Update existing quiz
+        await quizzesApi.update(parseInt(editingQuizId), quizData);
+        // Reload quizzes
+        if (selectedCourseForQuizzes) {
+          await handleLoadQuizzes(selectedCourseForQuizzes);
+        }
+        setEditingQuizId(null);
+      } else {
+        // Create new quiz
+        await quizzesApi.create(parseInt(newQuiz.courseId), quizData);
+        // Reload quizzes
+        await handleLoadQuizzes(newQuiz.courseId);
+        setCreatingNewQuizInEditView(false);
+      }
+
+      setShowSaveSuccess(true);
+      setNewQuiz({
+        title: '', courseId: '', timeLimit: '15', passingScore: '70',
+        questions: [{ question: '', type: 'multiple-choice', options: ['', '', '', ''], correctAnswer: '', explanation: '' }],
+      });
+
+      setTimeout(() => {
+        setShowSaveSuccess(false);
+        setActiveTab('edit-quizzes');
+      }, 2000);
+    } catch (error) {
+      console.error('Error saving quiz:', error);
+      setSaveError(error instanceof Error ? error.message : 'Failed to save quiz');
+    }
   };
 
-  const handleEditCourse = (courseId: string) => {
-    const course = courses.find(c => c.id === courseId);
-    if (course) {
-      setNewCourse({
-        title: course.title,
-        subtitle: course.subtitle,
-        description: course.description,
-        category: course.category,
-        level: course.level,
-        price: String(course.price),
-        image: course.image,
-        instructorId: String(course.instructorId || user?.id || ''),
-        modules: course.modules.map(m => ({
-          title: m.title,
-          lessons: m.lessons.map(l => ({
-            title: l.title,
-            type: l.type || 'video',
-            duration: l.duration || '',
-          })),
-        })),
-      });
-      setEditingCourseId(courseId);
-      setActiveTab('create-course');
+  const handleEditCourse = async (courseId: string) => {
+    try {
+      // Fetch full course details including modules
+      const fullCourse = await coursesApi.getById(parseInt(courseId));
+      
+      if (fullCourse) {
+        setNewCourse({
+          title: fullCourse.title,
+          subtitle: fullCourse.subtitle,
+          description: fullCourse.description,
+          objectives: fullCourse.objectives || [],
+          requirements: fullCourse.requirements || [],
+          category: fullCourse.category,
+          level: fullCourse.level,
+          price: String(fullCourse.price),
+          code: fullCourse.code || '',
+          image: fullCourse.image,
+          instructorId: String(fullCourse.instructorId || user?.id || ''),
+          modules: fullCourse.modules && fullCourse.modules.length > 0 
+            ? fullCourse.modules.map((m: any) => ({
+                title: m.title,
+                lessons: m.lessons && m.lessons.length > 0 
+                  ? m.lessons.map((l: any) => ({
+                      title: l.title,
+                      type: l.lesson_type || 'video',
+                      duration: l.duration || '',
+                    }))
+                  : [{ title: '', type: 'video', duration: '' }],
+              }))
+            : [{ title: '', lessons: [{ title: '', type: 'video', duration: '' }] }],
+        });
+        setEditingCourseId(courseId);
+        setShowEditModal(true);
+      }
+    } catch (error) {
+      console.error('Error fetching course for editing:', error);
+      setSaveError('Failed to load course details');
     }
+  };
+
+  const handleNewCourse = () => {
+    // Clear form and reset editing state
+    setNewCourse({
+      title: '', subtitle: '', description: '', category: 'Infant Care', level: 'Beginner', price: '', code: '',
+      image: 'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=600&h=400&fit=crop',
+      instructorId: user?.id?.toString() || '',
+      modules: [{ title: '', lessons: [{ title: '', type: 'video', duration: '' }] }],
+    });
+    setEditingCourseId(null);
+    setSaveError(null);
+    setActiveTab('create-course');
   };
 
   const handleSaveEditCourse = async () => {
@@ -278,22 +407,87 @@ const InstructorPanel: React.FC = () => {
         return;
       }
 
+      // Filter out empty modules and lessons
+      const modules = newCourse.modules
+        .filter(m => m.title.trim())
+        .map(m => ({
+          title: m.title,
+          lessons: m.lessons.filter(l => l.title.trim()).map(l => ({
+            title: l.title,
+            type: l.type || 'video',
+            duration: l.duration || '0',
+          })),
+        }))
+        .filter(m => m.lessons.length > 0);
+
+      if (modules.length === 0) {
+        setSaveError('At least one module with lessons is required');
+        return;
+      }
+
       const courseData = {
         title: newCourse.title,
         subtitle: newCourse.subtitle,
         description: newCourse.description,
+        objectives: newCourse.objectives.filter(o => o.trim()),
+        requirements: newCourse.requirements.filter(r => r.trim()),
         category: newCourse.category,
         level: newCourse.level,
         price: parseFloat(newCourse.price) || 0,
+        code: newCourse.code.trim() || '',
         image_url: newCourse.image,
       };
 
+      // Update course metadata
       await coursesApi.update(parseInt(editingCourseId), courseData);
+
+      // Fetch current course details to get actual module IDs for deletion
+      const currentCourseDetails = await coursesApi.getById(parseInt(editingCourseId));
+      if (currentCourseDetails && currentCourseDetails.modules) {
+        for (const module of currentCourseDetails.modules) {
+          try {
+            await coursesApi.deleteModule(parseInt(editingCourseId), module.id);
+          } catch (err) {
+            console.warn(`Failed to delete module ${module.id}:`, err);
+          }
+        }
+      }
+
+      // Create new modules and lessons
+      for (let moduleIndex = 0; moduleIndex < modules.length; moduleIndex++) {
+        const moduleData = modules[moduleIndex];
+        console.log(`Creating module: ${moduleData.title}`);
+
+        try {
+          const createdModule = await coursesApi.createModule(
+            parseInt(editingCourseId),
+            moduleData.title
+          );
+
+          // Create lessons for this module
+          for (const lesson of moduleData.lessons) {
+            console.log(`Creating lesson: ${lesson.title}`);
+            await coursesApi.createLesson(
+              parseInt(editingCourseId),
+              createdModule.id,
+              lesson.title,
+              (lesson.type as 'video' | 'reading' | 'activity') || 'video',
+              {
+                duration: lesson.duration,
+              }
+            );
+          }
+        } catch (error) {
+          console.error(`Error creating module or lessons:`, error);
+          throw new Error(`Failed to create module: ${moduleData.title}`);
+        }
+      }
+
       await refreshCourses();
 
       setShowSaveSuccess(true);
       setNewCourse({
-        title: '', subtitle: '', description: '', category: 'Infant Care', level: 'Beginner', price: '',
+        title: '', subtitle: '', description: '', objectives: [], requirements: [], category: 'Infant Care', level: 'Beginner', price: '', code: '',
         image: 'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=600&h=400&fit=crop',
         instructorId: user?.id?.toString() || '',
         modules: [{ title: '', lessons: [{ title: '', type: 'video', duration: '' }] }],
@@ -302,7 +496,7 @@ const InstructorPanel: React.FC = () => {
 
       setTimeout(() => {
         setShowSaveSuccess(false);
-        setActiveTab('courses');
+        setShowEditModal(false);
       }, 2000);
     } catch (error) {
       console.error('Error updating course:', error);
@@ -462,6 +656,65 @@ const InstructorPanel: React.FC = () => {
     });
   };
 
+  const handleLoadQuizzes = async (courseId: string) => {
+    try {
+      setIsLoadingQuizzes(true);
+      setSaveError(null);
+      setEditingQuizId(null);
+      setCreatingNewQuizInEditView(false);
+      const quizzes = await quizzesApi.getCourseLessons(parseInt(courseId));
+      setCourseQuizzes(quizzes || []);
+      setSelectedCourseForQuizzes(courseId);
+    } catch (error) {
+      console.error('Error loading quizzes:', error);
+      setSaveError('Failed to load quizzes');
+    } finally {
+      setIsLoadingQuizzes(false);
+    }
+  };
+
+  const handleEditQuiz = async (quizId: string) => {
+    try {
+      setEditingQuizId(quizId);
+      const quiz = courseQuizzes.find(q => q.id === parseInt(quizId));
+      if (quiz) {
+        setNewQuiz({
+          title: quiz.title,
+          courseId: selectedCourseForQuizzes || '',
+          timeLimit: String(quiz.time_limit_minutes || ''),
+          passingScore: String(quiz.passing_score || '70'),
+          questions: quiz.questions?.map((q: any) => ({
+            question: q.question_text,
+            type: q.question_type,
+            options: q.options?.options || [],
+            correctAnswer: q.correct_answer,
+            explanation: q.explanation || '',
+          })) || [],
+        });
+      }
+    } catch (error) {
+      console.error('Error loading quiz:', error);
+      setSaveError('Failed to load quiz');
+    }
+  };
+
+  const handleDeleteQuiz = async (quizId: string) => {
+    if (quizDeleteConfirm !== quizId) return;
+    
+    try {
+      setSaveError(null);
+      await quizzesApi.delete(parseInt(quizId));
+      setCourseQuizzes(courseQuizzes.filter(q => q.id !== parseInt(quizId)));
+      setShowSaveSuccess(true);
+      setQuizDeleteConfirm(null);
+      setTimeout(() => setShowSaveSuccess(false), 2000);
+    } catch (error) {
+      console.error('Error deleting quiz:', error);
+      setSaveError('Failed to delete quiz');
+      setQuizDeleteConfirm(null);
+    }
+  };
+
   const addQuestion = () => {
     setNewQuiz(prev => ({
       ...prev,
@@ -474,6 +727,7 @@ const InstructorPanel: React.FC = () => {
     { id: 'courses' as const, label: 'My Courses', icon: BookOpen },
     { id: 'create-course' as const, label: 'Create Course', icon: Plus },
     { id: 'create-quiz' as const, label: 'Create Quiz', icon: FileText },
+    { id: 'edit-quizzes' as const, label: 'Edit Quizzes', icon: Edit },
     { id: 'instructors' as const, label: 'Instructors', icon: Users },
     { id: 'students' as const, label: 'Students', icon: Users },
   ];
@@ -499,6 +753,27 @@ const InstructorPanel: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Instructor Dashboard</h1>
             <p className="text-gray-500">Manage your courses, quizzes, and students</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <DollarSign className="w-4 h-4 text-teal-600" />
+              Currency:
+            </label>
+            <select
+              value={selectedCurrency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none bg-white"
+            >
+              {currencies.length > 0 ? (
+                currencies.map(curr => (
+                  <option key={curr.code} value={curr.code}>
+                    {curr.code} - {curr.name}
+                  </option>
+                ))
+              ) : (
+                <option disabled>Loading currencies...</option>
+              )}
+            </select>
           </div>
         </div>
 
@@ -570,7 +845,7 @@ const InstructorPanel: React.FC = () => {
                           </div>
                         </td>
                         <td className="py-3 text-gray-700">{course.rating}</td>
-                        <td className="py-3 font-medium text-gray-900">R{(course.enrolled * course.price * 0.7).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                        <td className="py-3 font-medium text-gray-900">{currencySymbol}{(course.enrolled * course.price * 0.7).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -611,7 +886,7 @@ const InstructorPanel: React.FC = () => {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900">My Courses ({courses.length})</h2>
               <button
-                onClick={() => setActiveTab('create-course')}
+                onClick={() => handleNewCourse()}
                 className="flex items-center gap-2 bg-teal-600 text-white px-4 py-2.5 rounded-xl font-medium hover:bg-teal-700 transition-colors"
               >
                 <Plus className="w-4 h-4" /> New Course
@@ -630,7 +905,7 @@ const InstructorPanel: React.FC = () => {
                     <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
                       <span>{course.enrolled} students</span>
                       <span>Rating: {course.rating}</span>
-                      <span>R{course.price}</span>
+                      <span>{currencySymbol}{course.price}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -695,6 +970,335 @@ const InstructorPanel: React.FC = () => {
           </div>
         )}
 
+        {/* Edit Course Modal */}
+        {showEditModal && editingCourseId && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">Edit Course</h2>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Basic Info */}
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-4">Basic Information</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Instructor</label>
+                      <select
+                        value={newCourse.instructorId}
+                        onChange={(e) => setNewCourse(prev => ({ ...prev, instructorId: e.target.value }))}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                      >
+                        <option value="">Select an instructor</option>
+                        {instructors.map(instr => (
+                          <option key={instr.id} value={instr.user_id}>
+                            {instr.title} {instr.email && `(${instr.email})`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Course Title</label>
+                      <input
+                        type="text"
+                        value={newCourse.title}
+                        onChange={(e) => setNewCourse(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="e.g., Advanced Infant Care Techniques"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Course Code</label>
+                      <input
+                        type="text"
+                        value={newCourse.code}
+                        onChange={(e) => setNewCourse(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                        placeholder="e.g., IC-101, TD-201"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Subtitle</label>
+                      <input
+                        type="text"
+                        value={newCourse.subtitle}
+                        onChange={(e) => setNewCourse(prev => ({ ...prev, subtitle: e.target.value }))}
+                        placeholder="A brief description of the course"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <textarea
+                        value={newCourse.description}
+                        onChange={(e) => setNewCourse(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Detailed course description..."
+                        rows={4}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none resize-none"
+                      />
+                    </div>
+
+                    {/* Learning Objectives */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">What You'll Learn (Learning Objectives)</label>
+                      <div className="space-y-2">
+                        {newCourse.objectives.map((obj, idx) => (
+                          <div key={idx} className="flex gap-2">
+                            <input
+                              type="text"
+                              value={obj}
+                              onChange={(e) => {
+                                const objectives = [...newCourse.objectives];
+                                objectives[idx] = e.target.value;
+                                setNewCourse(prev => ({ ...prev, objectives }));
+                              }}
+                              placeholder="e.g., Understand infant development stages"
+                              className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                            <button
+                              onClick={() => setNewCourse(prev => ({ ...prev, objectives: prev.objectives.filter((_, i) => i !== idx) }))}
+                              className="px-3 py-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => setNewCourse(prev => ({ ...prev, objectives: [...prev.objectives, ''] }))}
+                          className="flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700"
+                        >
+                          <PlusCircle className="w-4 h-4" /> Add Objective
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Course Requirements */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Requirements</label>
+                      <div className="space-y-2">
+                        {newCourse.requirements.map((req, idx) => (
+                          <div key={idx} className="flex gap-2">
+                            <input
+                              type="text"
+                              value={req}
+                              onChange={(e) => {
+                                const requirements = [...newCourse.requirements];
+                                requirements[idx] = e.target.value;
+                                setNewCourse(prev => ({ ...prev, requirements }));
+                              }}
+                              placeholder="e.g., Basic knowledge of child psychology"
+                              className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                            <button
+                              onClick={() => setNewCourse(prev => ({ ...prev, requirements: prev.requirements.filter((_, i) => i !== idx) }))}
+                              className="px-3 py-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => setNewCourse(prev => ({ ...prev, requirements: [...prev.requirements, ''] }))}
+                          className="flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700"
+                        >
+                          <PlusCircle className="w-4 h-4" /> Add Requirement
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Course Image URL</label>
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <input
+                            type="url"
+                            value={newCourse.image}
+                            onChange={(e) => setNewCourse(prev => ({ ...prev, image: e.target.value }))}
+                            placeholder="https://example.com/image.jpg"
+                            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                          />
+                          <label className="px-4 py-3 bg-teal-50 text-teal-600 border border-teal-200 rounded-xl text-sm font-medium hover:bg-teal-100 transition-colors cursor-pointer">
+                            Browse
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleImageUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                        {newCourse.image && (
+                          <div className="relative w-full h-32 rounded-lg overflow-hidden border border-gray-200">
+                            <img src={newCourse.image} alt="Course Preview" className="w-full h-full object-cover" onError={(e) => {e.currentTarget.src = 'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=600&h=400&fit=crop'}} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                        <select
+                          value={newCourse.category}
+                          onChange={(e) => setNewCourse(prev => ({ ...prev, category: e.target.value }))}
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                        >
+                          <option>Infant Care</option>
+                          <option>Toddler Development</option>
+                          <option>Safety & Health</option>
+                          <option>Professional Development</option>
+                          <option>Special Needs</option>
+                          <option>Curriculum Planning</option>
+                          <option>Family Engagement</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Level</label>
+                        <select
+                          value={newCourse.level}
+                          onChange={(e) => setNewCourse(prev => ({ ...prev, level: e.target.value }))}
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                        >
+                          <option>Beginner</option>
+                          <option>Intermediate</option>
+                          <option>Advanced</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Price ({currencySymbol})</label>
+                      <input
+                        type="number"
+                        value={newCourse.price}
+                        onChange={(e) => setNewCourse(prev => ({ ...prev, price: e.target.value }))}
+                        placeholder="49.99"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Course Modules */}
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-4">Course Modules</h3>
+                  <div className="space-y-4">
+                    {newCourse.modules.map((module, mi) => (
+                      <div key={mi} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                        <div className="flex items-center gap-3 mb-3">
+                          <GripVertical className="w-4 h-4 text-gray-400" />
+                          <span className="text-sm font-semibold text-gray-500">Module {mi + 1}</span>
+                          {mi > 0 && (
+                            <button
+                              onClick={() => setNewCourse(prev => ({ ...prev, modules: prev.modules.filter((_, i) => i !== mi) }))}
+                              className="ml-auto text-red-400 hover:text-red-600"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          value={module.title}
+                          onChange={(e) => {
+                            const modules = [...newCourse.modules];
+                            modules[mi] = { ...modules[mi], title: e.target.value };
+                            setNewCourse(prev => ({ ...prev, modules }));
+                          }}
+                          placeholder="Module title"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3 focus:ring-2 focus:ring-teal-500 outline-none"
+                        />
+                        {module.lessons.map((lesson, li) => (
+                          <div key={li} className="flex items-center gap-2 mb-2">
+                            <input
+                              type="text"
+                              value={lesson.title}
+                              onChange={(e) => {
+                                const modules = [...newCourse.modules];
+                                modules[mi].lessons[li] = { ...modules[mi].lessons[li], title: e.target.value };
+                                setNewCourse(prev => ({ ...prev, modules }));
+                              }}
+                              placeholder="Lesson title"
+                              className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                            <select
+                              value={lesson.type}
+                              onChange={(e) => {
+                                const modules = [...newCourse.modules];
+                                modules[mi].lessons[li] = { ...modules[mi].lessons[li], type: e.target.value };
+                                setNewCourse(prev => ({ ...prev, modules }));
+                              }}
+                              className="px-2 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            >
+                              <option value="video">Video</option>
+                              <option value="reading">Reading</option>
+                              <option value="activity">Activity</option>
+                            </select>
+                            <input
+                              type="text"
+                              value={lesson.duration}
+                              onChange={(e) => {
+                                const modules = [...newCourse.modules];
+                                modules[mi].lessons[li] = { ...modules[mi].lessons[li], duration: e.target.value };
+                                setNewCourse(prev => ({ ...prev, modules }));
+                              }}
+                              placeholder="Duration"
+                              className="w-24 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => addLesson(mi)}
+                          className="flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700 mt-2"
+                        >
+                          <PlusCircle className="w-4 h-4" /> Add Lesson
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={addModule}
+                      className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 hover:border-teal-400 hover:text-teal-600 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" /> Add Module
+                    </button>
+                  </div>
+                </div>
+
+                {/* Error Message */}
+                {saveError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-red-700 text-sm">{saveError}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="sticky bottom-0 border-t border-gray-200 bg-gray-50 p-6 flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSaveError(null);
+                  }}
+                  className="px-6 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEditCourse}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl bg-teal-600 text-white font-medium hover:bg-teal-700 transition-colors"
+                >
+                  <Save className="w-4 h-4" /> Update Course
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Create/Edit Course */}
         {activeTab === 'create-course' && (
           <div className="max-w-3xl">
@@ -730,6 +1334,16 @@ const InstructorPanel: React.FC = () => {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Course Code</label>
+                    <input
+                      type="text"
+                      value={newCourse.code}
+                      onChange={(e) => setNewCourse(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                      placeholder="e.g., IC-101, TD-201"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Subtitle</label>
                     <input
                       type="text"
@@ -749,6 +1363,75 @@ const InstructorPanel: React.FC = () => {
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none resize-none"
                     />
                   </div>
+
+                  {/* Learning Objectives */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">What You'll Learn (Learning Objectives)</label>
+                    <div className="space-y-2">
+                      {newCourse.objectives.map((obj, idx) => (
+                        <div key={idx} className="flex gap-2">
+                          <input
+                            type="text"
+                            value={obj}
+                            onChange={(e) => {
+                              const objectives = [...newCourse.objectives];
+                              objectives[idx] = e.target.value;
+                              setNewCourse(prev => ({ ...prev, objectives }));
+                            }}
+                            placeholder="e.g., Understand infant development stages"
+                            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                          />
+                          <button
+                            onClick={() => setNewCourse(prev => ({ ...prev, objectives: prev.objectives.filter((_, i) => i !== idx) }))}
+                            className="px-3 py-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setNewCourse(prev => ({ ...prev, objectives: [...prev.objectives, ''] }))}
+                        className="flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700"
+                      >
+                        <PlusCircle className="w-4 h-4" /> Add Objective
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Course Requirements */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Requirements</label>
+                    <div className="space-y-2">
+                      {newCourse.requirements.map((req, idx) => (
+                        <div key={idx} className="flex gap-2">
+                          <input
+                            type="text"
+                            value={req}
+                            onChange={(e) => {
+                              const requirements = [...newCourse.requirements];
+                              requirements[idx] = e.target.value;
+                              setNewCourse(prev => ({ ...prev, requirements }));
+                            }}
+                            placeholder="e.g., Basic knowledge of child psychology"
+                            className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                          />
+                          <button
+                            onClick={() => setNewCourse(prev => ({ ...prev, requirements: prev.requirements.filter((_, i) => i !== idx) }))}
+                            className="px-3 py-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => setNewCourse(prev => ({ ...prev, requirements: [...prev.requirements, ''] }))}
+                        className="flex items-center gap-1 text-sm text-teal-600 hover:text-teal-700"
+                      >
+                        <PlusCircle className="w-4 h-4" /> Add Requirement
+                      </button>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Course Image URL</label>
                     <div className="space-y-2">
@@ -808,7 +1491,7 @@ const InstructorPanel: React.FC = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Price (R)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Price ({currencySymbol})</label>
                     <input
                       type="number"
                       value={newCourse.price}
@@ -911,7 +1594,7 @@ const InstructorPanel: React.FC = () => {
                     setActiveTab('courses');
                     setEditingCourseId(null);
                     setNewCourse({
-                      title: '', subtitle: '', description: '', category: 'Infant Care', level: 'Beginner', price: '',
+                      title: '', subtitle: '', description: '', category: 'Infant Care', level: 'Beginner', price: '', code: '',
                       image: 'https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=600&h=400&fit=crop',
                       instructorId: user?.id?.toString() || '',
                       modules: [{ title: '', lessons: [{ title: '', type: 'video', duration: '' }] }],
@@ -1092,6 +1775,276 @@ const InstructorPanel: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Edit Quizzes */}
+        {activeTab === 'edit-quizzes' && (
+          <div className="max-w-5xl">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">View & Edit Quizzes</h2>
+            
+            {!selectedCourseForQuizzes ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <label className="block text-sm font-medium text-gray-700 mb-3">Select a Course</label>
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleLoadQuizzes(e.target.value);
+                    }
+                  }}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                >
+                  <option value="">Choose a course to manage quizzes...</option>
+                  {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <button
+                    onClick={() => {
+                      setSelectedCourseForQuizzes(null);
+                      setCourseQuizzes([]);
+                      setEditingQuizId(null);
+                    }}
+                    className="text-teal-600 hover:text-teal-700 font-medium text-sm"
+                  >
+                    ← Back to Course Selection
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingQuizId(null);
+                      setCreatingNewQuizInEditView(true);
+                      setNewQuiz({
+                        title: '', courseId: selectedCourseForQuizzes, timeLimit: '15', passingScore: '70',
+                        questions: [{ question: '', type: 'multiple-choice', options: ['', '', '', ''], correctAnswer: '', explanation: '' }],
+                      });
+                    }}
+                    className="flex items-center gap-2 bg-teal-600 text-white px-4 py-2.5 rounded-xl font-medium hover:bg-teal-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" /> Create New Quiz
+                  </button>
+                </div>
+
+                {isLoadingQuizzes ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">Loading quizzes...</p>
+                  </div>
+                ) : courseQuizzes.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+                    <p className="text-gray-500 mb-4">No quizzes found for this course</p>
+                    <button
+                      onClick={() => {
+                        setEditingQuizId(null);
+                        setCreatingNewQuizInEditView(true);
+                        setNewQuiz({
+                          title: '', courseId: selectedCourseForQuizzes, timeLimit: '15', passingScore: '70',
+                          questions: [{ question: '', type: 'multiple-choice', options: ['', '', '', ''], correctAnswer: '', explanation: '' }],
+                        });
+                      }}
+                      className="inline-flex items-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-teal-700 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" /> Create First Quiz
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 mb-8">
+                    {courseQuizzes.map(quiz => (
+                      <div key={quiz.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between hover:shadow-md transition-shadow">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900 mb-1">{quiz.title}</h3>
+                          <div className="flex items-center gap-4 text-sm text-gray-500">
+                            <span>{quiz.questions?.length || 0} questions</span>
+                            <span>Pass: {quiz.passing_score}%</span>
+                            {quiz.time_limit_minutes && <span>Time: {quiz.time_limit_minutes} min</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleEditQuiz(String(quiz.id))}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          {quizDeleteConfirm === String(quiz.id) ? (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleDeleteQuiz(String(quiz.id))}
+                                className="px-3 py-1 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => setQuizDeleteConfirm(null)}
+                                className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setQuizDeleteConfirm(String(quiz.id))}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(editingQuizId || creatingNewQuizInEditView) && (
+                  <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+                    <h3 className="text-lg font-bold text-gray-900">{editingQuizId ? 'Edit' : 'Create'} Quiz</h3>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Quiz Title</label>
+                        <input
+                          type="text"
+                          value={newQuiz.title}
+                          onChange={(e) => setNewQuiz(prev => ({ ...prev, title: e.target.value }))}
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Time Limit (min)</label>
+                        <input
+                          type="number"
+                          value={newQuiz.timeLimit}
+                          onChange={(e) => setNewQuiz(prev => ({ ...prev, timeLimit: e.target.value }))}
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Pass Score (%)</label>
+                        <input
+                          type="number"
+                          value={newQuiz.passingScore}
+                          onChange={(e) => setNewQuiz(prev => ({ ...prev, passingScore: e.target.value }))}
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Questions */}
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-4">Questions</h4>
+                      <div className="space-y-4">
+                        {newQuiz.questions.map((q, qi) => (
+                          <div key={qi} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-sm font-semibold text-gray-500">Question {qi + 1}</span>
+                              {qi > 0 && (
+                                <button
+                                  onClick={() => setNewQuiz(prev => ({ ...prev, questions: prev.questions.filter((_, i) => i !== qi) }))}
+                                  className="text-red-400 hover:text-red-600"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                            <textarea
+                              value={q.question}
+                              onChange={(e) => {
+                                const questions = [...newQuiz.questions];
+                                questions[qi] = { ...questions[qi], question: e.target.value };
+                                setNewQuiz(prev => ({ ...prev, questions }));
+                              }}
+                              rows={2}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3 resize-none focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                              <select
+                                value={q.type}
+                                onChange={(e) => {
+                                  const questions = [...newQuiz.questions];
+                                  questions[qi] = { ...questions[qi], type: e.target.value };
+                                  setNewQuiz(prev => ({ ...prev, questions }));
+                                }}
+                                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                              >
+                                <option value="multiple-choice">Multiple Choice</option>
+                                <option value="true-false">True/False</option>
+                                <option value="short-answer">Short Answer</option>
+                              </select>
+                              <input
+                                type="text"
+                                value={q.correctAnswer}
+                                onChange={(e) => {
+                                  const questions = [...newQuiz.questions];
+                                  questions[qi] = { ...questions[qi], correctAnswer: e.target.value };
+                                  setNewQuiz(prev => ({ ...prev, questions }));
+                                }}
+                                placeholder="Correct answer"
+                                className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                              />
+                            </div>
+                            {q.type === 'multiple-choice' && (
+                              <div className="space-y-2 mb-3">
+                                {q.options.map((opt, oi) => (
+                                  <input
+                                    key={oi}
+                                    type="text"
+                                    value={opt}
+                                    onChange={(e) => {
+                                      const questions = [...newQuiz.questions];
+                                      const options = [...questions[qi].options];
+                                      options[oi] = e.target.value;
+                                      questions[qi] = { ...questions[qi], options };
+                                      setNewQuiz(prev => ({ ...prev, questions }));
+                                    }}
+                                    placeholder={`Option ${String.fromCharCode(65 + oi)}`}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            <textarea
+                              value={q.explanation}
+                              onChange={(e) => {
+                                const questions = [...newQuiz.questions];
+                                questions[qi] = { ...questions[qi], explanation: e.target.value };
+                                setNewQuiz(prev => ({ ...prev, questions }));
+                              }}
+                              placeholder="Explanation for the correct answer..."
+                              rows={2}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:ring-2 focus:ring-teal-500 outline-none"
+                            />
+                          </div>
+                        ))}
+                        <button
+                          onClick={addQuestion}
+                          className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 hover:border-teal-400 hover:text-teal-600 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" /> Add Question
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-4 border-t border-gray-200">
+                      <button
+                        onClick={() => {
+                          setEditingQuizId(null);
+                          setCreatingNewQuizInEditView(false);
+                        }}
+                        className="px-6 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveQuiz}
+                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-teal-600 text-white font-medium hover:bg-teal-700 transition-colors"
+                      >
+                        <Save className="w-4 h-4" /> {editingQuizId ? 'Save Changes' : 'Create Quiz'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1281,7 +2234,7 @@ const InstructorPanel: React.FC = () => {
                         <p className="text-xs text-gray-500 mt-1">Course Rating</p>
                       </div>
                       <div>
-                        <p className="text-2xl font-bold text-gray-900">R{(course.price * course.enrolled * 0.7).toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                        <p className="text-2xl font-bold text-gray-900">{currencySymbol}{(course.price * course.enrolled * 0.7).toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
                         <p className="text-xs text-gray-500 mt-1">Revenue Generated</p>
                       </div>
                       <div>
@@ -1297,7 +2250,7 @@ const InstructorPanel: React.FC = () => {
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">No Courses Yet</h3>
                   <p className="text-gray-500 mb-4">Create your first course to see student analytics and engagement metrics.</p>
                   <button
-                    onClick={() => setActiveTab('create-course')}
+                    onClick={() => handleNewCourse()}
                     className="bg-teal-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-teal-700 transition-colors"
                   >
                     Create Course

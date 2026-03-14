@@ -4,6 +4,8 @@ export interface User {
   auth_id: string;
   email: string;
   role: 'student' | 'instructor' | 'admin';
+  email_verified: boolean;
+  email_verified_at: string | null;
   created_at: string;
   updated_at: string;
   is_active: boolean;
@@ -43,6 +45,7 @@ export interface Course {
   uuid: string;
   instructor_id: number;
   title: string;
+  code: string | null;
   subtitle: string | null;
   description: string | null;
   category: string | null;
@@ -166,6 +169,7 @@ export interface Certificate {
 // API Request/Response types
 export interface CreateCourseRequest {
   title: string;
+  code?: string;  // Unique course code
   subtitle?: string;
   description?: string;
   category?: string;

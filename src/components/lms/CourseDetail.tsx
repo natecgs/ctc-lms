@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLMS } from '@/contexts/LMSContext';
+import { coursesApi } from '@/lib/api';
+import { getCurrencySymbol } from '@/lib/currencies';
 
 import {
   ArrowLeft, Clock, Users, Star, BookOpen, Award, Play, FileText,
@@ -10,11 +12,33 @@ const CourseDetail: React.FC = () => {
   const { selectedCourseId, getCourse, navigate, enrollInCourse, isEnrolled, getEnrolledCourse, quizzes, coursesLoading } = useLMS();
   const [expandedModules, setExpandedModules] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'overview' | 'curriculum' | 'instructor'>('overview');
+  const [fullCourse, setFullCourse] = useState<any>(null);
+  const [loadingFullCourse, setLoadingFullCourse] = useState(false);
 
-  const course = selectedCourseId ? getCourse(selectedCourseId) : null;
+  // Get course from context (lightweight version)
+  const contextCourse = selectedCourseId ? getCourse(selectedCourseId) : null;
+  
+  // Fetch full course details with modules when selectedCourseId changes
+  useEffect(() => {
+    if (selectedCourseId) {
+      setLoadingFullCourse(true);
+      coursesApi.getById(parseInt(selectedCourseId))
+        .then(data => {
+          setFullCourse(data);
+          setLoadingFullCourse(false);
+        })
+        .catch(err => {
+          console.error('Error fetching full course details:', err);
+          setLoadingFullCourse(false);
+        });
+    }
+  }, [selectedCourseId]);
+
+  // Use full course if available, otherwise use context course
+  const course = fullCourse || contextCourse;
   
   // Show loading state while courses are being fetched
-  if (coursesLoading && !course) {
+  if ((coursesLoading || loadingFullCourse) && !course) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -95,7 +119,7 @@ const CourseDetail: React.FC = () => {
               <p className="text-teal-100 text-lg mb-4">{course.subtitle}</p>
 
               <div className="flex flex-wrap items-center gap-4 text-sm text-teal-200">
-                <span className="flex items-center gap-1.5">
+               {/*  <span className="flex items-center gap-1.5">
                   <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
                   <span className="text-white font-semibold">{course.rating}</span>
                 </span>
@@ -104,7 +128,7 @@ const CourseDetail: React.FC = () => {
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Clock className="w-4 h-4" /> {course.duration}
-                </span>
+                </span> */}
                 <span className="flex items-center gap-1.5">
                   <BookOpen className="w-4 h-4" /> {course.lessons} lessons
                 </span>
@@ -155,16 +179,16 @@ const CourseDetail: React.FC = () => {
               ) : (
                 <>
                   <div className="text-center mb-4">
-                    <span className="text-3xl font-bold text-gray-900">R{course.price}</span>
-                    <span className="text-gray-500 text-sm ml-1">ZAR</span>
+                    <span className="text-3xl font-bold text-gray-900">{getCurrencySymbol(course.currency || 'MWK')}{course.price}</span>
+                    <span className="text-gray-500 text-sm ml-1">{course.currency || 'MWK'}</span>
                   </div>
                   <button
                     onClick={handleEnroll}
                     className="w-full bg-teal-600 text-white py-3 rounded-xl font-semibold hover:bg-teal-700 transition-colors mb-3"
                   >
-                    Enroll Now
+                    Enrol Now
                   </button>
-                  <p className="text-xs text-gray-500 text-center">30-day money-back guarantee</p>
+                  {/* <p className="text-xs text-gray-500 text-center">30-day money-back guarantee</p> */}
                 </>
               )}
 
@@ -176,7 +200,7 @@ const CourseDetail: React.FC = () => {
                   <CheckCircle className="w-4 h-4 text-teal-500" /> Certificate of completion
                 </div>
                 <div className="flex items-center gap-2 text-sm text-gray-600">
-                  <CheckCircle className="w-4 h-4 text-teal-500" /> CEU credits available
+                  <CheckCircle className="w-4 h-4 text-teal-500" /> Acredited childcare training
                 </div>
               </div>
             </div>
@@ -371,9 +395,9 @@ const CourseDetail: React.FC = () => {
                       <h3 className="text-xl font-bold text-gray-900">{course.instructor}</h3>
                       <p className="text-teal-600 font-medium">{course.instructorTitle}</p>
                       <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                        <span className="flex items-center gap-1"><Star className="w-4 h-4 text-amber-400 fill-amber-400" /> {course.instructorRating} Rating</span>
-                        <span className="flex items-center gap-1"><Users className="w-4 h-4" /> {course.instructorTotalCourses}+ Students</span>
-                        <span className="flex items-center gap-1"><BookOpen className="w-4 h-4" /> {course.modules?.length || 0} Courses</span>
+                       {/*  <span className="flex items-center gap-1"><Star className="w-4 h-4 text-amber-400 fill-amber-400" /> {course.instructorRating} Rating</span>
+                        <span className="flex items-center gap-1"><Users className="w-4 h-4" /> {course.instructorTotalCourses}+ Students</span> */}
+                        <span className="flex items-center gap-1"><BookOpen className="w-4 h-4" /> {course.instructor_total_courses || 0} Courses</span>
                       </div>
                     </div>
                   </div>

@@ -11,11 +11,29 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255),  -- NULL if using external auth
   role VARCHAR(50) NOT NULL DEFAULT 'student',  -- 'student', 'instructor', 'admin'
+  email_verified BOOLEAN DEFAULT FALSE,
+  email_verified_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   is_active BOOLEAN DEFAULT TRUE,
   CONSTRAINT valid_role CHECK (role IN ('student', 'instructor', 'admin'))
 );
+
+-- ============================================================================
+-- EMAIL VERIFICATION
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token VARCHAR(255) UNIQUE NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_email_verification_tokens_user_id ON email_verification_tokens(user_id);
+CREATE INDEX idx_email_verification_tokens_token ON email_verification_tokens(token);
+CREATE INDEX idx_email_verification_tokens_expires_at ON email_verification_tokens(expires_at);
 
 CREATE TABLE IF NOT EXISTS profiles (
   id SERIAL PRIMARY KEY,
@@ -57,12 +75,14 @@ CREATE TABLE IF NOT EXISTS courses (
   uuid VARCHAR(36) UNIQUE NOT NULL,  -- For external references
   instructor_id INTEGER NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
+  code VARCHAR(50) UNIQUE,  -- Unique course code
   subtitle VARCHAR(500),
   description TEXT,
   category VARCHAR(100),
   level VARCHAR(50) NOT NULL,  -- 'Beginner', 'Intermediate', 'Advanced'
   duration VARCHAR(50),  -- e.g., "8 hours"
   price DECIMAL(10, 2) DEFAULT 0,
+  currency VARCHAR(3) DEFAULT 'MWK',  -- ISO 4217 currency code
   rating DECIMAL(3, 2) DEFAULT 0,
   enrolled_count INTEGER DEFAULT 0,
   image_url TEXT,  -- Can store base64 encoded images or URLs
@@ -77,6 +97,8 @@ CREATE TABLE IF NOT EXISTS courses (
 
 CREATE INDEX idx_courses_instructor_id ON courses(instructor_id);
 CREATE INDEX idx_courses_category ON courses(category);
+CREATE INDEX idx_courses_code ON courses(code);
+CREATE INDEX idx_courses_currency ON courses(currency);
 CREATE INDEX idx_courses_uuid ON courses(uuid);
 
 -- ============================================================================

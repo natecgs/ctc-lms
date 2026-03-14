@@ -11,10 +11,11 @@ import InstructorPanel from './lms/InstructorPanel';
 import CertificatesPage from './lms/CertificatesPage';
 import ProfilePage from './lms/ProfilePage';
 import AuthModal from './lms/AuthModal';
+import { EmailVerificationModal } from './lms/EmailVerificationModal';
 import Footer from './lms/Footer';
 
 const LMSContent: React.FC = () => {
-  const { currentView } = useLMS();
+  const { currentView, showEmailVerification, pendingVerificationUserId, pendingVerificationEmail, closeEmailVerification, completeEmailVerification } = useLMS();
 
   const renderView = () => {
     switch (currentView) {
@@ -39,6 +40,13 @@ const LMSContent: React.FC = () => {
       </main>
       {currentView !== 'lesson-player' && currentView !== 'quiz' && <Footer />}
       <AuthModal />
+      <EmailVerificationModal 
+        isOpen={showEmailVerification && !!pendingVerificationUserId}
+        email={pendingVerificationEmail || ''}
+        userId={pendingVerificationUserId || 0}
+        onClose={closeEmailVerification}
+        onVerified={completeEmailVerification}
+      />
     </div>
   );
 };

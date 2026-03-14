@@ -154,7 +154,7 @@ const HomePage: React.FC = () => {
       </section>
 
       {/* Testimonials */}
-      <section className="py-16 bg-gradient-to-br from-teal-900 to-teal-800">
+      {/* <section className="py-16 bg-gradient-to-br from-teal-900 to-teal-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold text-white mb-3">What Our Students Say</h2>
@@ -180,7 +180,7 @@ const HomePage: React.FC = () => {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* CTA Section */}
       <section className="py-16 bg-white">
